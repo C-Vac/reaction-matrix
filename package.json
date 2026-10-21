@@ -2,7 +2,7 @@
   "name": "@goblinlife/reaction-matrix",
   "version": "0.2.0",
   "private": true,
-  "description": "A hypercube of reactions: one drop-in button that opens a draggable 4D figure and returns a four-axis emotional vector.",
+  "description": "A hypercube of reactions: one drop-in React button that opens a draggable 4D figure and returns a four-axis emotional vector. Replaces upvotes and emoji reactions.",
   "repository": {
     "type": "git",
     "url": "https://github.com/C-Vac/reaction-matrix.git"
@@ -21,15 +21,41 @@
     "./styles.css": "./src/styles.css"
   },
   "scripts": {
-    "lint": "tsc --noEmit"
+    "lint": "tsc --noEmit",
+    "test": "vitest run",
+    "demo": "npm --prefix demo run dev"
   },
   "peerDependencies": {
     "react": ">=19"
   },
   "devDependencies": {
-    "@types/node": "^26.6.4",
     "@types/react": "19.3.0",
     "react": "^19.3.0",
-    "typescript": "~5.9.3"
-  }
+    "typescript": "~5.9.3",
+    "vitest": "^5.0.3"
+  },
+  "license": "Apache-2.0",
+  "keywords": [
+    "react",
+    "reactions",
+    "upvote",
+    "emoji",
+    "tesseract",
+    "hypercube",
+    "4d",
+    "ui"
+  ],
+  "homepage": "https://github.com/C-Vac/reaction-matrix#readme",
+  "bugs": {
+    "url": "https://github.com/C-Vac/reaction-matrix/issues"
+  },
+  "sideEffects": [
+    "*.css"
+  ],
+  "files": [
+    "src",
+    "!src/**/*.test.ts",
+    "LICENSE",
+    "README.md"
+  ]
 }

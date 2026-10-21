@@ -1,9 +1,17 @@
 "use client";
 
+/**
+ * @file ReactionMatrixButton.tsx
+ * @description The drop-in control: a small trigger button that opens a modal dialog containing the
+ * {@link ReactionMatrixPanel}. Stateless about data: pass the current summary and the person's own
+ * reaction in, and handle `onReact` to store a new one.
+ */
+
 import React, { useEffect, useId, useRef, useState } from 'react';
 import { ReactionMatrixPanel } from './ReactionMatrixPanel';
 import { archetypeById, meanVector, readVector, type ReactionDraft, type ReactionSummary } from './math';
 
+/** Props for {@link ReactionMatrixButton}. */
 export interface ReactionMatrixButtonProps {
   /** What is being reacted to. Used for the accessible name only; the host decides where data goes. */
   targetId: string;
@@ -35,6 +43,13 @@ function Mark() {
 
 const CLOSE_AFTER_LOCK_MS = 650;
 
+/**
+ * Button + dialog. Shows "React" until someone reacts, then the group's consensus reaction (or the
+ * person's own, once locked) with a count.
+ *
+ * @example
+ * <ReactionMatrixButton targetId="post-1" summary={summary} mine={mine} onReact={save} />
+ */
 export function ReactionMatrixButton({
   targetId,
   targetLabel,
@@ -49,6 +64,9 @@ export function ReactionMatrixButton({
   const titleId = useId();
   const dialogRef = useRef<HTMLDialogElement>(null);
   const [open, setOpen] = useState(false);
+  const closeTimer = useRef<number | undefined>(undefined);
+
+  useEffect(() => () => window.clearTimeout(closeTimer.current), []);
 
   useEffect(() => {
     const dialog = dialogRef.current;
@@ -68,7 +86,7 @@ export function ReactionMatrixButton({
 
   const handleLock = async (draft: ReactionDraft) => {
     await onReact?.(draft);
-    window.setTimeout(() => setOpen(false), CLOSE_AFTER_LOCK_MS);
+    closeTimer.current = window.setTimeout(() => setOpen(false), CLOSE_AFTER_LOCK_MS);
   };
 
   return (

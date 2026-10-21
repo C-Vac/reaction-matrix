@@ -1,5 +1,18 @@
 "use client";
 
+/**
+ * @file TesseractCanvas.tsx
+ * @description The rotatable hypercube. A 2D canvas draws the 16 corners and 32 edges of a
+ * tesseract, perspective-projected 4D -> 3D -> 2D, plus the person's reaction point inside it.
+ *
+ * Interaction: drag to rotate (in the ordinary 3D planes, or in XW / YW / ZW for true 4D rotation),
+ * click or tap a corner to pick it, arrow keys rotate when the canvas is focused.
+ *
+ * Colors and font come from the `--rm-*` CSS custom properties (see styles.css), read from the
+ * canvas element, so the host's theme applies. The component draws nothing until it is mounted in
+ * a browser; it is safe to server-render.
+ */
+
 import React, { useEffect, useRef, useState } from 'react';
 import {
   CORNER_AT_VERTEX,
@@ -14,6 +27,7 @@ import {
   type Vector4D,
 } from './math';
 
+/** Props for {@link TesseractCanvas}. */
 export interface TesseractCanvasProps {
   /** The reaction point, drawn inside the figure. */
   value: Vector4D;
@@ -38,6 +52,7 @@ const ZOOM = 1.05;
 
 /** Theme colors come from CSS custom properties on the canvas so the host owns the palette. */
 interface Palette {
+  font: string;
   rapt: string;
   feral: string;
   point: string;
@@ -46,6 +61,7 @@ interface Palette {
 }
 
 const FALLBACK: Palette = {
+  font: 'ui-monospace, SFMono-Regular, Menlo, monospace',
   rapt: '#39ff14',
   feral: '#b026ff',
   point: '#f5f5dc',
@@ -57,6 +73,7 @@ function readPalette(el: Element): Palette {
   const css = getComputedStyle(el);
   const get = (name: string, fallback: string) => css.getPropertyValue(name).trim() || fallback;
   return {
+    font: get('--rm-font-mono', FALLBACK.font),
     rapt: get('--rm-rapt', FALLBACK.rapt),
     feral: get('--rm-feral', FALLBACK.feral),
     point: get('--rm-point', FALLBACK.point),
@@ -69,6 +86,10 @@ function prefersReducedMotion(): boolean {
   return typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
 }
 
+/**
+ * Controlled hypercube view. It never changes `value` itself: corner clicks are reported through
+ * `onPickCorner` and the parent decides what to do with them.
+ */
 export function TesseractCanvas({ value, onPickCorner, onTumble, className = '' }: TesseractCanvasProps) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -203,7 +224,8 @@ export function TesseractCanvas({ value, onPickCorner, onTumble, className = '' 
       ctx.globalAlpha = 1;
 
       // Labels only for the corner under the pointer and the corner the point resolves to.
-      ctx.font = '600 11px var(--font-jetbrains, ui-monospace, monospace)';
+      // Canvas fonts cannot use var(), so the family was resolved into the palette above.
+      ctx.font = `600 11px ${palette.font}`;
       ctx.textBaseline = 'middle';
       const labelled = new Set<number>([resolvedVertex]);
       if (hover.current !== null) labelled.add(hover.current);

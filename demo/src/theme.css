@@ -1,0 +1,34 @@
+/* The demo page's own look, plus the library's theme hooks. Everything below :root is optional. */
+:root {
+  color-scheme: dark;
+  --rm-surface: #0d1410;
+  --rm-line: #2a3a2e;
+  --rm-ink: #dbe7db;
+  --rm-muted: #8da08d;
+  --rm-rapt: #39ff14;
+  --rm-feral: #b026ff;
+}
+body {
+  margin: 0;
+  background: #070b08;
+  color: var(--rm-ink);
+  font: 16px/1.5 system-ui, sans-serif;
+}
+main {
+  max-width: 44rem;
+  margin: 0 auto;
+  padding: 2rem 1rem 4rem;
+}
+.lede {
+  color: var(--rm-muted);
+}
+.card {
+  margin: 1rem 0;
+  padding: 1rem;
+  border: 1px solid var(--rm-line);
+  border-radius: 0.75rem;
+}
+.card h2 {
+  margin: 0 0 0.25rem;
+  font-size: 1.1rem;
+}

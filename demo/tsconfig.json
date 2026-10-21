@@ -1,0 +1,17 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "moduleResolution": "bundler",
+    "jsx": "react-jsx",
+    "strict": true,
+    "skipLibCheck": true,
+    "noEmit": true,
+    "paths": {
+      "@goblinlife/reaction-matrix": ["../src/index.ts"],
+      "@goblinlife/reaction-matrix/math": ["../src/math.ts"]
+    }
+  },
+  "include": ["src"]
+}

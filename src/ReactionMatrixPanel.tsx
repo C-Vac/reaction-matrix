@@ -1,5 +1,13 @@
 "use client";
 
+/**
+ * @file ReactionMatrixPanel.tsx
+ * @description The picker without the button or dialog: hypercube, a reading of what the current
+ * point means, four axis sliders, the disorientation meter, a lock-in button and an optional
+ * read-out of everyone else's reactions. Use it directly to embed the picker inline in a page,
+ * or let {@link ReactionMatrixButton} put it in a dialog for you.
+ */
+
 import React, { useId, useRef, useState } from 'react';
 import { TesseractCanvas } from './TesseractCanvas';
 import {
@@ -16,6 +24,7 @@ import {
   type Vector4D,
 } from './math';
 
+/** Props for {@link ReactionMatrixPanel}. */
 export interface ReactionMatrixPanelProps {
   /** Where the point starts. Pass the person's previous reaction to let them revise it. */
   initialVector?: Vector4D | null;
@@ -36,6 +45,7 @@ function sliderFill(value: number): React.CSSProperties {
 
 const fmt = (n: number) => (n > 0 ? '+' : n < 0 ? '−' : '±') + Math.abs(n).toFixed(2);
 
+/** Inline picker. Holds the working vector and interaction stats; the host owns persistence. */
 export function ReactionMatrixPanel({
   initialVector,
   summary,
