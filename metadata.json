@@ -1,6 +1,0 @@
-{
-  "name": "GoblinLife.org - The 4D Emotional Hypercube",
-  "description": "GoblinLife.org portal featuring the 4D Tesseract of Emotions: an extradimensional interactive hypercube component replacing primitive 1D human upvotes.",
-  "requestFramePermissions": [],
-  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
-}
