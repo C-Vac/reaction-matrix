@@ -2,12 +2,20 @@
 
 import React, { useId, useRef, useState } from 'react';
 import { TesseractCanvas } from './TesseractCanvas';
+import { EmojiPicker } from './EmojiPicker';
 import {
   AXES,
+  DEFAULT_INTENSITIES,
+  MIN_AXIS_INTENSITY,
   ORIGIN,
-  clampVector,
+  PICKER_ARCHETYPES,
+  UNMOVED,
+  archetypeById,
+  consensusVertices,
+  cornerCounts,
+  cornerVector,
+  intensitiesOf,
   measureDisorientation,
-  meanVector,
   readVector,
   topArchetypes,
   type Archetype,
@@ -17,9 +25,9 @@ import {
 } from './math';
 
 export interface ReactionMatrixPanelProps {
-  /** Where the point starts. Pass the person's previous reaction to let them revise it. */
-  initialVector?: Vector4D | null;
-  /** Everyone else's reactions, shown as a collapsed read-out under the form. */
+  /** The person's previous reaction, to revise it. */
+  initial?: Pick<ReactionDraft, 'vector' | 'archetypeId'> | null;
+  /** Everyone's reactions: they bend the figure and fill the tally. */
   summary?: ReactionSummary;
   /** True when the person is revising an earlier reaction. Only changes the wording. */
   revising?: boolean;
@@ -28,26 +36,21 @@ export interface ReactionMatrixPanelProps {
   onCancel?: () => void;
 }
 
-/** Fill from the middle of the track out to the thumb. */
+/** Fill from the left edge to the thumb (intensity runs from barely to totally). */
 function sliderFill(value: number): React.CSSProperties {
-  const pos = ((value + 1) / 2) * 100;
-  return { '--rm-from': `${Math.min(50, pos)}%`, '--rm-to': `${Math.max(50, pos)}%` } as React.CSSProperties;
+  const pos = ((value - MIN_AXIS_INTENSITY) / (1 - MIN_AXIS_INTENSITY)) * 100;
+  return { '--rm-from': '0%', '--rm-to': `${pos}%` } as React.CSSProperties;
 }
 
-const fmt = (n: number) => (n > 0 ? '+' : n < 0 ? '−' : '±') + Math.abs(n).toFixed(2);
-
-export function ReactionMatrixPanel({
-  initialVector,
-  summary,
-  revising = false,
-  onLock,
-  onCancel,
-}: ReactionMatrixPanelProps) {
+export function ReactionMatrixPanel({ initial, summary, revising = false, onLock, onCancel }: ReactionMatrixPanelProps) {
   const id = useId();
-  const [vector, setVector] = useState<Vector4D>(() => (initialVector ? clampVector(initialVector) : ORIGIN));
+  const [picked, setPicked] = useState<Archetype | null>(() => (initial ? archetypeById(initial.archetypeId) ?? null : null));
+  const [intensities, setIntensities] = useState<Vector4D>(() =>
+    initial && initial.archetypeId !== UNMOVED.id ? intensitiesOf(initial.vector) : DEFAULT_INTENSITIES
+  );
   const [state, setState] = useState<'idle' | 'locking' | 'locked' | 'error'>('idle');
 
-  // Interaction totals feed the disorientation reading. Refs, with one state copy for display.
+  // The disorientation reading is decoration; interaction totals live in refs.
   const stats = useRef({ tumble: 0, adjustments: 0, startedAt: Date.now() });
   const measure = () =>
     measureDisorientation({
@@ -56,45 +59,49 @@ export function ReactionMatrixPanel({
       elapsedMs: Date.now() - stats.current.startedAt,
     });
   const [disorientation, setDisorientation] = useState(measure);
-
-  const reading = readVector(vector);
-
-  const change = (next: Vector4D) => {
+  const touch = () => {
     stats.current.adjustments += 1;
-    setVector(clampVector(next));
     setDisorientation(measure());
   };
 
-  const snapTo = (corner: Archetype) => change(corner.vector);
+  const vector = picked ? cornerVector(picked.id, intensities) : ORIGIN;
+  const reading = readVector(vector);
+  const sliderOff = !picked || picked.id === UNMOVED.id;
+
+  const pick = (a: Archetype) => {
+    setPicked(a);
+    if (state !== 'locking') setState('idle');
+    touch();
+  };
+
   const scramble = () => {
-    const r = () => Math.round((Math.random() * 2 - 1) * 100) / 100;
-    change({ x: r(), y: r(), z: r(), w: r() });
+    const r = () => Math.round((MIN_AXIS_INTENSITY + Math.random() * (1 - MIN_AXIS_INTENSITY)) * 100) / 100;
+    setPicked(PICKER_ARCHETYPES[Math.floor(Math.random() * (PICKER_ARCHETYPES.length - 1))]);
+    setIntensities({ x: r(), y: r(), z: r(), w: r() });
+    touch();
   };
 
   const lock = async () => {
+    if (!picked) return;
     setState('locking');
     try {
-      await onLock({
-        vector,
-        archetypeId: reading.archetype.id,
-        disorientation: measure().index,
-      });
+      await onLock({ vector, archetypeId: picked.id, disorientation: measure().index });
       setState('locked');
     } catch {
       setState('error');
     }
   };
 
-  const mean = summary ? meanVector(summary) : null;
-  const consensus = mean ? readVector(mean) : null;
-  const top = summary ? topArchetypes(summary) : [];
+  const top = summary ? topArchetypes(summary, PICKER_ARCHETYPES.length) : [];
   const topMax = top[0]?.count ?? 1;
 
   return (
     <div className="rm-panel">
       <TesseractCanvas
         value={vector}
-        onPickCorner={snapTo}
+        vertices={consensusVertices(summary)}
+        counts={cornerCounts(summary)}
+        onPickCorner={pick}
         onTumble={(radians) => {
           stats.current.tumble += radians;
           setDisorientation(measure());
@@ -102,43 +109,57 @@ export function ReactionMatrixPanel({
       />
 
       <div className="rm-panel__side">
-        <section aria-live="polite" className="rm-reading">
-          <p className="rm-eyebrow">Reads as</p>
-          <p className="rm-reading__name">{reading.archetype.name}</p>
-          <p className="rm-reading__gloss">{reading.archetype.gloss}</p>
-          <p className="rm-reading__meta">
-            <span>{reading.intensityLabel}</span>
-            <span aria-hidden="true">/</span>
-            <span className="rm-mono">
-              [{fmt(vector.x)} {fmt(vector.y)} {fmt(vector.z)} {fmt(vector.w)}]
-            </span>
-          </p>
+        <section>
+          <p className="rm-eyebrow">Pick one</p>
+          <EmojiPicker selectedId={picked?.id} onPick={pick} />
         </section>
 
-        <div className="rm-axes">
-          {AXES.map((axis) => (
-            <div key={axis.key} className="rm-axis">
-              <label htmlFor={`${id}-${axis.key}`} className="rm-axis__head">
-                <span>{axis.negative}</span>
-                <span className="rm-axis__name">
-                  {axis.name} <span className="rm-mono">{fmt(vector[axis.key])}</span>
-                </span>
-                <span>{axis.positive}</span>
-              </label>
-              <input
-                id={`${id}-${axis.key}`}
-                className="rm-range"
-                type="range"
-                min={-1}
-                max={1}
-                step={0.05}
-                value={vector[axis.key]}
-                style={sliderFill(vector[axis.key])}
-                aria-valuetext={`${axis.name} ${fmt(vector[axis.key])}, between ${axis.negative} and ${axis.positive}`}
-                onChange={(e) => change({ ...vector, [axis.key]: parseFloat(e.target.value) })}
-              />
-            </div>
-          ))}
+        <section aria-live="polite" className="rm-reading">
+          <p className="rm-eyebrow">Reads as</p>
+          <p className="rm-reading__name">
+            {picked ? (
+              <>
+                <span aria-hidden="true">{picked.emoji}</span> {picked.name}
+              </>
+            ) : (
+              'Nothing yet'
+            )}
+          </p>
+          <p className="rm-reading__gloss">
+            {picked ? picked.gloss : 'Choose a reaction above, or click a corner of the figure.'}
+          </p>
+          {picked && picked.id !== UNMOVED.id && <p className="rm-reading__meta">{reading.intensityLabel}</p>}
+        </section>
+
+        <div className="rm-axes" aria-disabled={sliderOff}>
+          {AXES.map((axis) => {
+            const pole = picked && picked.vector[axis.key] < 0 ? axis.negative : axis.positive;
+            const value = intensities[axis.key];
+            return (
+              <div key={axis.key} className="rm-axis">
+                <label htmlFor={`${id}-${axis.key}`} className="rm-axis__head">
+                  <span className="rm-axis__name">{sliderOff ? axis.name : pole}</span>
+                  <span className="rm-mono">{sliderOff ? '—' : value.toFixed(2)}</span>
+                </label>
+                <input
+                  id={`${id}-${axis.key}`}
+                  className="rm-range"
+                  type="range"
+                  min={MIN_AXIS_INTENSITY}
+                  max={1}
+                  step={0.05}
+                  value={value}
+                  disabled={sliderOff}
+                  style={sliderFill(value)}
+                  aria-valuetext={`${pole} intensity ${value.toFixed(2)}`}
+                  onChange={(e) => {
+                    setIntensities({ ...intensities, [axis.key]: parseFloat(e.target.value) });
+                    touch();
+                  }}
+                />
+              </div>
+            );
+          })}
         </div>
 
         <div className="rm-disorientation" data-severity={disorientation.severity}>
@@ -165,14 +186,6 @@ export function ReactionMatrixPanel({
           <button type="button" className="rm-btn rm-btn--quiet" onClick={scramble} disabled={state === 'locking'}>
             Scramble
           </button>
-          <button
-            type="button"
-            className="rm-btn rm-btn--quiet"
-            onClick={() => change(ORIGIN)}
-            disabled={state === 'locking'}
-          >
-            Reset
-          </button>
           {onCancel && (
             <button type="button" className="rm-btn rm-btn--quiet" onClick={onCancel}>
               Cancel
@@ -182,15 +195,17 @@ export function ReactionMatrixPanel({
             type="button"
             className="rm-btn rm-btn--primary"
             onClick={lock}
-            disabled={state === 'locking' || state === 'locked'}
+            disabled={!picked || state === 'locking' || state === 'locked'}
           >
             {state === 'locked'
               ? 'Locked'
               : state === 'locking'
                 ? 'Locking…'
-                : revising
-                  ? `Revise: ${reading.archetype.name}`
-                  : `Lock in ${reading.archetype.name}`}
+                : !picked
+                  ? 'Pick a reaction'
+                  : revising
+                    ? `Revise: ${picked.emoji} ${picked.name}`
+                    : `Lock in ${picked.emoji} ${picked.name}`}
           </button>
         </div>
         {state === 'error' && (
@@ -199,15 +214,15 @@ export function ReactionMatrixPanel({
           </p>
         )}
 
-        {summary && summary.count > 0 && consensus && (
-          <details className="rm-others">
-            <summary>
-              Everyone else ({summary.count}) <span className="rm-others__lead">{consensus.archetype.name}</span>
-            </summary>
+        {summary && summary.count > 0 && (
+          <details className="rm-others" open>
+            <summary>Everyone ({summary.count})</summary>
             <ul className="rm-bars">
               {top.map(({ archetype, count }) => (
                 <li key={archetype.id}>
-                  <span>{archetype.name}</span>
+                  <span>
+                    <span aria-hidden="true">{archetype.emoji}</span> {archetype.name}
+                  </span>
                   <span className="rm-bars__track">
                     <span style={{ width: `${(count / topMax) * 100}%` }} />
                   </span>
@@ -215,11 +230,6 @@ export function ReactionMatrixPanel({
                 </li>
               ))}
             </ul>
-            {mean && (
-              <p className="rm-others__mean rm-mono">
-                mean [{fmt(mean.x)} {fmt(mean.y)} {fmt(mean.z)} {fmt(mean.w)}]
-              </p>
-            )}
           </details>
         )}
       </div>
