@@ -3,6 +3,7 @@
 import React, { useId, useRef, useState } from 'react';
 import { TesseractCanvas } from './TesseractCanvas';
 import { EmojiPicker } from './EmojiPicker';
+import { Face } from './Face';
 import {
   AXES,
   DEFAULT_INTENSITIES,
@@ -119,7 +120,7 @@ export function ReactionMatrixPanel({ initial, summary, revising = false, onLock
           <p className="rm-reading__name">
             {picked ? (
               <>
-                <span aria-hidden="true">{picked.emoji}</span> {picked.name}
+                <Face archetype={picked} size={22} /> {picked.name}
               </>
             ) : (
               'Nothing yet'
@@ -203,9 +204,11 @@ export function ReactionMatrixPanel({ initial, summary, revising = false, onLock
                 ? 'Locking…'
                 : !picked
                   ? 'Pick a reaction'
-                  : revising
-                    ? `Revise: ${picked.emoji} ${picked.name}`
-                    : `Lock in ${picked.emoji} ${picked.name}`}
+                  : (
+                    <>
+                      {revising ? 'Revise:' : 'Lock in'} <Face archetype={picked} /> {picked.name}
+                    </>
+                  )}
           </button>
         </div>
         {state === 'error' && (
@@ -221,7 +224,7 @@ export function ReactionMatrixPanel({ initial, summary, revising = false, onLock
               {top.map(({ archetype, count }) => (
                 <li key={archetype.id}>
                   <span>
-                    <span aria-hidden="true">{archetype.emoji}</span> {archetype.name}
+                    <Face archetype={archetype} /> {archetype.name}
                   </span>
                   <span className="rm-bars__track">
                     <span style={{ width: `${(count / topMax) * 100}%` }} />

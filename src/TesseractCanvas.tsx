@@ -12,6 +12,7 @@ import {
   type Rotation4D,
   type Vector4D,
 } from './math';
+import { drawFace, facesReady } from './faces';
 import { DISTANCE_3D, DISTANCE_4D, ZOOM, drawFigure, readPalette } from './draw';
 
 export interface TesseractCanvasProps {
@@ -167,9 +168,12 @@ export function TesseractCanvas({ value, vertices = VERTICES, counts, onPickCorn
       labelled.forEach((i) => {
         if (i < 0) return;
         const n = countsRef.current?.[i] ?? 0;
-        const name = `${CORNER_AT_VERTEX[i].emoji} ${CORNER_AT_VERTEX[i].name}${n ? ` · ${n}` : ''}`;
+        const corner = CORNER_AT_VERTEX[i];
+        const withFace = facesReady();
+        const name = `${withFace ? '' : `${corner.emoji} `}${corner.name}${n ? ` · ${n}` : ''}`;
+        const faceWidth = withFace ? 18 : 0;
         const c = corners[i].p;
-        const width = ctx.measureText(name).width;
+        const width = ctx.measureText(name).width + faceWidth;
         const left = Math.min(size - width - 10, Math.max(4, c.x + 9));
         const top = Math.min(size - 11, Math.max(11, c.y));
         ctx.fillStyle = palette.surface;
@@ -177,7 +181,8 @@ export function TesseractCanvas({ value, vertices = VERTICES, counts, onPickCorn
         ctx.fillRect(left - 4, top - 9, width + 8, 18);
         ctx.globalAlpha = 1;
         ctx.fillStyle = palette.ink;
-        ctx.fillText(name, left, top);
+        if (withFace) drawFace(ctx, corner.id, left + 7, top, 14);
+        ctx.fillText(name, left + faceWidth, top);
       });
 
       // The reaction point: a solid dot and a ring. Quiet on purpose.

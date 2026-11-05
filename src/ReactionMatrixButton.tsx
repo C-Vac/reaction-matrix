@@ -4,6 +4,7 @@ import React, { useEffect, useId, useRef, useState } from 'react';
 import { ReactionMatrixPanel } from './ReactionMatrixPanel';
 import { ConsensusSnapshot } from './ConsensusSnapshot';
 import { EmojiPicker } from './EmojiPicker';
+import { Face } from './Face';
 import {
   DEFAULT_INTENSITIES,
   UNMOVED,
@@ -140,7 +141,7 @@ export function ReactionMatrixButton({
           disabled={busy}
           onClick={() => quickReact(archetype)}
         >
-          <span aria-hidden="true">{archetype.emoji}</span>
+          <Face archetype={archetype} />
           <span className="rm-mono">{n}</span>
         </button>
       ))}

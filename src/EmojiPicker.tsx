@@ -2,6 +2,7 @@
 
 import React, { useState } from 'react';
 import { FEATURED_ARCHETYPE_IDS, PICKER_ARCHETYPES, type Archetype } from './math';
+import { Face } from './Face';
 
 export interface EmojiPickerProps {
   selectedId?: string | null;
@@ -30,7 +31,7 @@ export function EmojiPicker({ selectedId, onPick, disabled = false, className = 
             onClick={() => onPick(a)}
           >
             <span className="rm-emoji__glyph" aria-hidden="true">
-              {a.emoji}
+              <Face archetype={a} size={32} />
             </span>
             <span className="rm-emoji__name">{a.name}</span>
           </button>

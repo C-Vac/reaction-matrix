@@ -3,6 +3,7 @@
  * @description Canvas drawing shared by the live figure (TesseractCanvas) and the inline snapshot
  * (ConsensusSnapshot). Browser only, but no React.
  */
+import { drawFace } from './faces';
 import { CORNER_AT_VERTEX, EDGES, project, rotate, type Rotation4D, type Vector4D } from './math';
 
 /** Theme colors come from CSS custom properties on the canvas so the host owns the palette. */
@@ -99,8 +100,11 @@ export function drawFigure(ctx: CanvasRenderingContext2D, o: FigureOptions): Dra
     counts.forEach((n, i) => {
       if (n <= 0) return;
       const px = Math.min(26, Math.max(10, o.size * (0.025 + 0.03 * Math.sqrt(n / top))));
+      const corner = CORNER_AT_VERTEX[i];
+      // Faces need a little more room than a glyph to read at this size.
+      if (drawFace(ctx, corner.id, corners[i].p.x, corners[i].p.y, px * 1.35)) return;
       ctx.font = `${px}px system-ui, "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif`;
-      ctx.fillText(CORNER_AT_VERTEX[i].emoji, corners[i].p.x, corners[i].p.y);
+      ctx.fillText(corner.emoji, corners[i].p.x, corners[i].p.y);
     });
     ctx.textAlign = 'start';
   }

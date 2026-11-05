@@ -3,4 +3,5 @@ export { ReactionMatrixPanel, type ReactionMatrixPanelProps } from './ReactionMa
 export { TesseractCanvas, type TesseractCanvasProps } from './TesseractCanvas';
 export { ConsensusSnapshot, type ConsensusSnapshotProps } from './ConsensusSnapshot';
 export { EmojiPicker, type EmojiPickerProps } from './EmojiPicker';
+export { Face } from './Face';
 export * from './math';

@@ -1,6 +1,6 @@
 # reaction-matrix
 
-A hypercube of reactions. Each of its 16 corners is a named reaction with an emoji. One drop-in row
+A hypercube of reactions. Each of its 16 corners is a named reaction with a goblin face (`src/faces.ts`), and the emoji stays as the fallback until the face sheet loads. One drop-in row
 shows a still of the consensus figure (the hypercube bent toward what people picked), a tally chip per
 emoji, and a picker: one tap reacts. The still opens a dialog with the spinning figure, where sliders
 set how strongly (never which reaction).

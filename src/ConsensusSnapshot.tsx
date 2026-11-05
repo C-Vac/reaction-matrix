@@ -1,8 +1,9 @@
 "use client";
 
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { consensusVertices, cornerCounts, type ReactionSummary, type Rotation4D } from './math';
 import { drawFigure, readPalette } from './draw';
+import { whenFacesLoad } from './faces';
 
 export interface ConsensusSnapshotProps {
   summary?: ReactionSummary;
@@ -20,6 +21,10 @@ const SNAPSHOT_ROTATION: Rotation4D = { xy: 0.3, xz: 0.4, xw: 0.2, yz: 0.1, yw: 
  */
 export function ConsensusSnapshot({ summary, size = 40, className = '' }: ConsensusSnapshotProps) {
   const ref = useRef<HTMLCanvasElement>(null);
+  const [facesArrived, setFacesArrived] = useState(0);
+
+  // A still doesn't redraw by itself, so draw again once the face sheet is in.
+  useEffect(() => whenFacesLoad(() => setFacesArrived((n) => n + 1)), []);
 
   useEffect(() => {
     const canvas = ref.current;
@@ -38,7 +43,7 @@ export function ConsensusSnapshot({ summary, size = 40, className = '' }: Consen
       weight: size < 64 ? 0.8 : 1,
       zoom: 1.6,
     });
-  }, [summary, size]);
+  }, [summary, size, facesArrived]);
 
   return (
     <canvas
