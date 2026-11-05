@@ -1,7 +1,9 @@
 # reaction-matrix
 
-A hypercube of reactions. One drop-in button opens a draggable 4D figure; the person moves a point
-through four axes and locks in a vector. It replaces upvotes and emoji reactions.
+A hypercube of reactions. Each of its 16 corners is a named reaction with a goblin face (`src/faces.ts`), and the emoji stays as the fallback until the face sheet loads. One drop-in row
+shows a still of the consensus figure (the hypercube bent toward what people picked), a tally chip per
+emoji, and a picker: one tap reacts. The still opens a dialog with the spinning figure, where sliders
+set how strongly (never which reaction).
 
 ```tsx
 import { ReactionMatrixButton } from '@goblinlife/reaction-matrix';
@@ -26,8 +28,14 @@ Four axes, each from -1 to +1:
 | z Conduct | Withdrawn | Mischief |
 | w Trance | Feral | Rapt |
 
-The 16 corners are the 16 named reactions (Rapture, Schadenfreude, Avarice, ... Numbness). A point
-between corners reads as its nearest corner plus an intensity; near the origin it reads "Unmoved".
+The 16 corners are the 16 named reactions (Rapture 🤩, Schadenfreude 😈, ... Numbness 😶); the origin
+is Unmoved 😐. People pick the emoji; `cornerVector(id, intensities)` places the point in that corner
+at the slider intensities (0.2 to 1 per axis), so the sliders can never change the reaction. Eight
+reactions are featured (`FEATURED_ARCHETYPE_IDS`); the rest sit behind "More".
+
+`consensusVertices(summary)` bends the figure: each corner scales with the square root of its share of
+the leader's votes (0.55 for none, 1 for the leader), and Unmoved votes shrink the whole figure.
+`ConsensusSnapshot` draws a still of it on mount.
 
 A reaction is `{ vector, archetypeId, disorientation }`. Aggregates are running sums
 (`ReactionSummary`), so a reaction can be added or replaced in O(1). `@goblinlife/reaction-matrix/math`

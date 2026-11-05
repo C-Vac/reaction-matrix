@@ -4,8 +4,9 @@
  * Safe to import on the server: validation and summary updates use the same code the client does.
  *
  * A reaction is a point in a 4D unit hypercube. Each axis runs from -1 to +1 between two poles; the
- * 16 corners of the hypercube are the 16 named reactions. Anything between corners is read as the
- * nearest corner plus an intensity.
+ * 16 corners of the hypercube are the 16 named reactions, each with an emoji. People pick the emoji;
+ * the point's distance along each axis is only the intensity. The figure drawn for a target is the
+ * hypercube with each corner pulled in or out by its share of the votes.
  */
 
 export interface Vector4D {
@@ -51,8 +52,41 @@ export interface Archetype {
   name: string;
   /** One dry line. Not a tooltip, not a joke: a description of the corner. */
   gloss: string;
+  emoji: string;
   vector: Vector4D;
 }
+
+const EMOJI: Record<string, string> = {
+  rapture: '🤩',
+  schadenfreude: '😈',
+  avarice: '🤑',
+  malice: '👿',
+  smugness: '😏',
+  grudge: '😒',
+  longing: '🥺',
+  vertigo: '😵‍💫',
+  frenzy: '🤪',
+  mockery: '🤡',
+  panic: '😱',
+  rage: '😡',
+  possessiveness: '😤',
+  contempt: '🙄',
+  paranoia: '🫣',
+  numbness: '😶',
+  unmoved: '😐',
+};
+
+/** The reactions offered first; the rest sit behind "More". */
+export const FEATURED_ARCHETYPE_IDS: readonly string[] = [
+  'rage',
+  'schadenfreude',
+  'smugness',
+  'panic',
+  'mockery',
+  'longing',
+  'numbness',
+  'rapture',
+];
 
 /** Corner definitions keyed by the sign of each axis, in x y z w order. */
 const CORNERS: Record<string, [id: string, name: string, gloss: string]> = {
@@ -81,6 +115,7 @@ export const ARCHETYPES: readonly Archetype[] = Object.entries(CORNERS).map(
     id,
     name,
     gloss,
+    emoji: EMOJI[id],
     vector: { x: sign(signs[0]), y: sign(signs[1]), z: sign(signs[2]), w: sign(signs[3]) },
   })
 );
@@ -90,6 +125,7 @@ export const UNMOVED: Archetype = {
   id: 'unmoved',
   name: 'Unmoved',
   gloss: 'Registers, but barely.',
+  emoji: EMOJI.unmoved,
   vector: ORIGIN,
 };
 
@@ -115,6 +151,48 @@ export const CORNER_AT_VERTEX: readonly Archetype[] = Array.from({ length: 16 },
   const v = { x: i & 8 ? 1 : -1, y: i & 4 ? 1 : -1, z: i & 2 ? 1 : -1, w: i & 1 ? 1 : -1 };
   return nearestCorner(v);
 });
+
+/** Every reaction in picker order: featured first, then the other corners, then Unmoved. */
+export const PICKER_ARCHETYPES: readonly Archetype[] = [
+  ...FEATURED_ARCHETYPE_IDS.map((id) => BY_ID.get(id)!),
+  ...ARCHETYPES.filter((a) => !FEATURED_ARCHETYPE_IDS.includes(a.id)),
+  UNMOVED,
+];
+
+/** Smallest distance along an axis a picked corner keeps, so it never reads as Unmoved. */
+export const MIN_AXIS_INTENSITY = 0.2;
+export const DEFAULT_AXIS_INTENSITY = 0.75;
+export const DEFAULT_INTENSITIES: Vector4D = {
+  x: DEFAULT_AXIS_INTENSITY,
+  y: DEFAULT_AXIS_INTENSITY,
+  z: DEFAULT_AXIS_INTENSITY,
+  w: DEFAULT_AXIS_INTENSITY,
+};
+
+const clampIntensity = (n: number) =>
+  Math.max(MIN_AXIS_INTENSITY, Math.min(1, Number.isFinite(n) ? Math.abs(n) : DEFAULT_AXIS_INTENSITY));
+
+/** How far along each axis a vector sits, ignoring direction. */
+export function intensitiesOf(v: Vector4D): Vector4D {
+  return { x: clampIntensity(v.x), y: clampIntensity(v.y), z: clampIntensity(v.z), w: clampIntensity(v.w) };
+}
+
+/**
+ * The point for a picked reaction: the corner's direction on every axis, at the given intensity.
+ * The intensities can never move it to another corner. Unmoved is always the origin.
+ */
+export function cornerVector(archetypeId: string, intensities: Vector4D = DEFAULT_INTENSITIES): Vector4D {
+  const corner = archetypeById(archetypeId);
+  if (!corner || corner.id === UNMOVED.id) return ORIGIN;
+  const m = intensitiesOf(intensities);
+  const r = (n: number) => Math.round(n * 100) / 100;
+  return {
+    x: r(corner.vector.x * m.x),
+    y: r(corner.vector.y * m.y),
+    z: r(corner.vector.z * m.z),
+    w: r(corner.vector.w * m.w),
+  };
+}
 
 export type IntensityLabel = 'Faint' | 'Moderate' | 'Pronounced' | 'Total';
 
@@ -285,6 +363,39 @@ export function sanitizeDraft(input: unknown): ReactionDraft | null {
     archetypeId: readVector(vector).archetype.id,
     disorientation: Math.max(0, Math.min(100, Math.round(dis))),
   };
+}
+
+// ---------------------------------------------------------------------------------------------
+// Consensus figure
+// ---------------------------------------------------------------------------------------------
+
+/**
+ * How far a corner nobody picked sags in, relative to the most-picked one. The leader stays on the
+ * unit hypercube so perspective projection never blows up.
+ */
+const SAG = 0.55;
+const STRETCH = 1;
+
+/** Votes per corner, indexed like VERTICES. */
+export function cornerCounts(s: ReactionSummary | null | undefined): number[] {
+  return CORNER_AT_VERTEX.map((a) => Math.max(0, s?.archetypeCounts[a.id] ?? 0));
+}
+
+/**
+ * The hypercube bent to the votes: each corner scaled by the square root of its share of the
+ * most-picked corner's votes, from SAG (none) to STRETCH (the leader). Unmoved votes shrink the
+ * whole figure. With no corner votes it is the perfect hypercube.
+ */
+export function consensusVertices(s: ReactionSummary | null | undefined): Vector4D[] {
+  const counts = cornerCounts(s);
+  const top = Math.max(...counts);
+  if (!s || s.count <= 0 || top <= 0) return VERTICES.map((v) => ({ ...v }));
+  const unmovedShare = Math.min(1, Math.max(0, (s.archetypeCounts[UNMOVED.id] ?? 0) / s.count));
+  const shrink = 1 - 0.4 * unmovedShare;
+  return VERTICES.map((v, i) => {
+    const f = (SAG + (STRETCH - SAG) * Math.sqrt(counts[i] / top)) * shrink;
+    return { x: v.x * f, y: v.y * f, z: v.z * f, w: v.w * f };
+  });
 }
 
 // ---------------------------------------------------------------------------------------------

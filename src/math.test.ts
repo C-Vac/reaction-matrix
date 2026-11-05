@@ -18,6 +18,13 @@ import {
   vertexIndexOf,
   CORNER_AT_VERTEX,
   NO_ROTATION,
+  FEATURED_ARCHETYPE_IDS,
+  PICKER_ARCHETYPES,
+  UNMOVED,
+  consensusVertices,
+  cornerCounts,
+  cornerVector,
+  intensitiesOf,
 } from './math';
 
 describe('hypercube geometry', () => {
@@ -129,5 +136,61 @@ describe('sanitizeDraft', () => {
     expect(sanitizeDraft({})).toBeNull();
     expect(sanitizeDraft({ vector: { x: 'a', y: 0, z: 0, w: 0 } })).toBeNull();
     expect(sanitizeDraft({ vector: { x: NaN, y: 0, z: 0, w: 0 } })).toBeNull();
+  });
+});
+
+describe('emoji reactions', () => {
+  it('gives every reaction a distinct emoji and offers all of them in the picker', () => {
+    const emoji = PICKER_ARCHETYPES.map((a) => a.emoji);
+    expect(PICKER_ARCHETYPES).toHaveLength(17);
+    expect(new Set(emoji).size).toBe(17);
+    expect(PICKER_ARCHETYPES.slice(0, 8).map((a) => a.id)).toEqual([...FEATURED_ARCHETYPE_IDS]);
+    expect(PICKER_ARCHETYPES.at(-1)).toBe(UNMOVED);
+  });
+
+  it('keeps a picked corner whatever the intensities, and survives server validation', () => {
+    for (const a of ARCHETYPES) {
+      for (const n of [0, 0.2, 0.5, 1, -3]) {
+        const vector = cornerVector(a.id, { x: n, y: n, z: n, w: n });
+        expect(readVector(vector).archetype.id).toBe(a.id);
+        expect(sanitizeDraft({ vector, disorientation: 0 })?.archetypeId).toBe(a.id);
+      }
+    }
+    expect(cornerVector('unmoved')).toEqual(ORIGIN);
+    expect(cornerVector('nope')).toEqual(ORIGIN);
+  });
+
+  it('reads intensities back from a vector', () => {
+    expect(intensitiesOf({ x: -0.9, y: 0.05, z: 0.5, w: -1 })).toEqual({ x: 0.9, y: 0.2, z: 0.5, w: 1 });
+  });
+});
+
+describe('consensus figure', () => {
+  const scale = (v: { x: number }, i: number) => Math.abs(v.x / VERTICES[i].x);
+
+  it('is the perfect hypercube with no votes', () => {
+    expect(consensusVertices(EMPTY_SUMMARY)).toEqual(VERTICES);
+    expect(consensusVertices(undefined)).toEqual(VERTICES);
+  });
+
+  it('keeps the leader on the hypercube and sags the corners nobody picked', () => {
+    let s = EMPTY_SUMMARY;
+    for (let i = 0; i < 4; i++) s = applyReaction(s, { vector: cornerVector('rage'), archetypeId: 'rage' });
+    s = applyReaction(s, { vector: cornerVector('panic'), archetypeId: 'panic' });
+    const v = consensusVertices(s);
+    const rage = CORNER_AT_VERTEX.findIndex((a) => a.id === 'rage');
+    const panic = CORNER_AT_VERTEX.findIndex((a) => a.id === 'panic');
+    const numb = CORNER_AT_VERTEX.findIndex((a) => a.id === 'numbness');
+    expect(scale(v[rage], rage)).toBeCloseTo(1);
+    expect(scale(v[panic], panic)).toBeCloseTo(0.55 + 0.45 * 0.5);
+    expect(scale(v[numb], numb)).toBeCloseTo(0.55);
+    expect(cornerCounts(s)[rage]).toBe(4);
+  });
+
+  it('shrinks the whole figure for Unmoved votes', () => {
+    let s = applyReaction(EMPTY_SUMMARY, { vector: cornerVector('rage'), archetypeId: 'rage' });
+    s = applyReaction(s, { vector: ORIGIN, archetypeId: 'unmoved' });
+    const rage = CORNER_AT_VERTEX.findIndex((a) => a.id === 'rage');
+    expect(scale(consensusVertices(s)[rage], rage)).toBeCloseTo(0.8);
   });
 });

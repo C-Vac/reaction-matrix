@@ -2,7 +2,20 @@
 
 import React, { useEffect, useId, useRef, useState } from 'react';
 import { ReactionMatrixPanel } from './ReactionMatrixPanel';
-import { archetypeById, meanVector, readVector, type ReactionDraft, type ReactionSummary } from './math';
+import { ConsensusSnapshot } from './ConsensusSnapshot';
+import { EmojiPicker } from './EmojiPicker';
+import { Face } from './Face';
+import {
+  DEFAULT_INTENSITIES,
+  UNMOVED,
+  archetypeById,
+  cornerVector,
+  intensitiesOf,
+  topArchetypes,
+  type Archetype,
+  type ReactionDraft,
+  type ReactionSummary,
+} from './math';
 
 export interface ReactionMatrixButtonProps {
   /** What is being reacted to. Used for the accessible name only; the host decides where data goes. */
@@ -10,31 +23,24 @@ export interface ReactionMatrixButtonProps {
   targetLabel?: string;
   /** Everyone's reactions so far. */
   summary?: ReactionSummary;
-  /** The current person's locked reaction, if any. Opens the dialog in revise mode. */
+  /** The current person's locked reaction, if any. */
   mine?: ReactionDraft | null;
-  /** Called when the person locks in. Resolve to close the dialog; reject to show an error. */
+  /** Called when the person reacts. Resolve on success; reject to show an error. */
   onReact?: (draft: ReactionDraft) => void | Promise<void>;
-  /** Return false to stop the dialog opening, e.g. to ask the person to sign in first. */
+  /** Return false to stop the person reacting, e.g. to ask them to sign in first. */
   onBeforeOpen?: () => boolean | void;
   size?: 'sm' | 'md';
-  /** Replaces the default "React" label when nobody has reacted. */
+  /** Replaces the default "React" label on the add button when nobody has reacted. */
   label?: string;
   className?: string;
 }
 
-/** Four-dimensional cube drawn the old way: two squares and the lines between their corners. */
-function Mark() {
-  return (
-    <svg className="rm-mark" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" focusable="false">
-      <rect x="1.5" y="1.5" width="13" height="13" />
-      <rect x="5" y="5" width="6" height="6" />
-      <path d="M1.5 1.5 5 5M14.5 1.5 11 5M1.5 14.5 5 11M14.5 14.5 11 11" />
-    </svg>
-  );
-}
-
 const CLOSE_AFTER_LOCK_MS = 650;
 
+/**
+ * The inline reaction row: a still of the consensus figure (opens the hypercube dialog), a tally
+ * chip per emoji people picked (tap to pick it too), and an add button with the emoji picker.
+ */
 export function ReactionMatrixButton({
   targetId,
   targetLabel,
@@ -48,7 +54,11 @@ export function ReactionMatrixButton({
 }: ReactionMatrixButtonProps) {
   const titleId = useId();
   const dialogRef = useRef<HTMLDialogElement>(null);
+  const rootRef = useRef<HTMLSpanElement>(null);
   const [open, setOpen] = useState(false);
+  const [picking, setPicking] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [failed, setFailed] = useState(false);
 
   useEffect(() => {
     const dialog = dialogRef.current;
@@ -57,14 +67,48 @@ export function ReactionMatrixButton({
     if (!open && dialog.open) dialog.close();
   }, [open]);
 
+  // The picker closes on a click outside the row or on Escape.
+  useEffect(() => {
+    if (!picking) return;
+    const away = (e: PointerEvent) => {
+      if (!rootRef.current?.contains(e.target as Node)) setPicking(false);
+    };
+    const esc = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setPicking(false);
+    };
+    document.addEventListener('pointerdown', away);
+    document.addEventListener('keydown', esc);
+    return () => {
+      document.removeEventListener('pointerdown', away);
+      document.removeEventListener('keydown', esc);
+    };
+  }, [picking]);
+
+  const allowed = () => onBeforeOpen?.() !== false;
   const count = summary?.count ?? 0;
-  const mean = summary ? meanVector(summary) : null;
-  const mineName = mine ? archetypeById(mine.archetypeId)?.name : undefined;
-  const text = mineName ?? (mean ? readVector(mean).archetype.name : label);
   const subject = targetLabel ?? targetId;
-  const name = mineName
-    ? `Your reaction to ${subject}: ${mineName}. ${count} total. Revise.`
-    : `${label} to ${subject}${count ? `. Consensus: ${text}. ${count} so far` : ''}`;
+  const mineArchetype = mine ? archetypeById(mine.archetypeId) : undefined;
+
+  const chips = summary ? topArchetypes(summary, size === 'sm' ? 3 : 5) : [];
+  if (mineArchetype && !chips.some((c) => c.archetype.id === mineArchetype.id)) {
+    chips.push({ archetype: mineArchetype, count: summary?.archetypeCounts[mineArchetype.id] ?? 1 });
+  }
+
+  /** One tap: that emoji's corner, at the person's previous intensities if they had any. */
+  const quickReact = async (a: Archetype) => {
+    setPicking(false);
+    if (busy || a.id === mine?.archetypeId || !allowed()) return;
+    const intensities = mine && mine.archetypeId !== UNMOVED.id ? intensitiesOf(mine.vector) : DEFAULT_INTENSITIES;
+    setBusy(true);
+    setFailed(false);
+    try {
+      await onReact?.({ vector: cornerVector(a.id, intensities), archetypeId: a.id, disorientation: 0 });
+    } catch {
+      setFailed(true);
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const handleLock = async (draft: ReactionDraft) => {
     await onReact?.(draft);
@@ -72,22 +116,63 @@ export function ReactionMatrixButton({
   };
 
   return (
-    <span className={`rm-root ${className}`}>
+    <span ref={rootRef} className={`rm-root rm-row rm-row--${size} ${className}`} aria-busy={busy || undefined}>
       <button
         type="button"
-        className={`rm-button rm-button--${size}`}
-        data-locked={mine ? 'true' : undefined}
+        className="rm-figure-btn"
         aria-haspopup="dialog"
-        aria-label={name}
+        aria-label={`Open the reaction hypercube for ${subject}${count ? `, bent by ${count} reactions` : ''}`}
+        title="Open the hypercube"
         onClick={() => {
-          if (onBeforeOpen?.() === false) return;
-          setOpen(true);
+          if (allowed()) setOpen(true);
         }}
       >
-        <Mark />
-        <span className="rm-button__text">{text}</span>
-        {count > 0 && <span className="rm-button__count">{count}</span>}
+        <ConsensusSnapshot summary={summary} size={size === 'sm' ? 26 : 34} />
       </button>
+
+      {chips.map(({ archetype, count: n }) => (
+        <button
+          key={archetype.id}
+          type="button"
+          className="rm-tally"
+          aria-pressed={archetype.id === mine?.archetypeId}
+          aria-label={`${archetype.name}: ${n}${archetype.id === mine?.archetypeId ? ', your reaction' : ''}`}
+          title={archetype.name}
+          disabled={busy}
+          onClick={() => quickReact(archetype)}
+        >
+          <Face archetype={archetype} />
+          <span className="rm-mono">{n}</span>
+        </button>
+      ))}
+
+      <span className="rm-add-wrap">
+        <button
+          type="button"
+          className="rm-add"
+          aria-expanded={picking}
+          aria-label={mineArchetype ? `Change your reaction to ${subject}` : `${label} to ${subject}`}
+          disabled={busy}
+          onClick={() => {
+            if (picking) setPicking(false);
+            else if (allowed()) setPicking(true);
+          }}
+        >
+          <span aria-hidden="true">＋</span>
+          {count === 0 && <span>{label}</span>}
+        </button>
+        {picking && (
+          <span className="rm-popover">
+            <EmojiPicker selectedId={mine?.archetypeId} onPick={quickReact} disabled={busy} />
+          </span>
+        )}
+      </span>
+
+      {failed && (
+        <span role="alert" className="rm-error">
+          Not saved.
+        </span>
+      )}
 
       <dialog
         ref={dialogRef}
@@ -105,18 +190,15 @@ export function ReactionMatrixButton({
                 <h2 id={titleId} className="rm-dialog__title">
                   {mine ? 'Revise your reaction' : 'Register a reaction'}
                 </h2>
-                <p className="rm-dialog__sub">Rotate the figure. Move the point. Lock it in.</p>
+                <p className="rm-dialog__sub">
+                  The figure is bent by everyone&apos;s reactions. Pick yours, set how strongly, lock it in.
+                </p>
               </div>
               <button type="button" className="rm-btn rm-btn--quiet" onClick={() => setOpen(false)} aria-label="Close">
                 Close
               </button>
             </header>
-            <ReactionMatrixPanel
-              initialVector={mine?.vector}
-              summary={summary}
-              revising={Boolean(mine)}
-              onLock={handleLock}
-            />
+            <ReactionMatrixPanel initial={mine} summary={summary} revising={Boolean(mine)} onLock={handleLock} />
           </div>
         )}
       </dialog>

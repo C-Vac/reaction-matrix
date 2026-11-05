@@ -3,7 +3,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
   CORNER_AT_VERTEX,
-  EDGES,
   VERTICES,
   project,
   rotate,
@@ -13,10 +12,16 @@ import {
   type Rotation4D,
   type Vector4D,
 } from './math';
+import { drawFace, facesReady } from './faces';
+import { DISTANCE_3D, DISTANCE_4D, ZOOM, drawFigure, readPalette } from './draw';
 
 export interface TesseractCanvasProps {
   /** The reaction point, drawn inside the figure. */
   value: Vector4D;
+  /** Corner positions (the consensus figure). Defaults to the perfect hypercube. */
+  vertices?: readonly Vector4D[];
+  /** Votes per corner, indexed like VERTICES; shown as emoji and in corner labels. */
+  counts?: readonly number[];
   /** Fired when the person clicks or taps a corner. */
   onPickCorner?: (corner: Archetype) => void;
   /** Fired with the angular size of every user-driven rotation, for the disorientation reading. */
@@ -31,45 +36,11 @@ const DRAG_SENSITIVITY = 0.012;
 const KEY_STEP = 0.12;
 const CLICK_SLOP_PX = 5;
 const HIT_RADIUS_PX = 16;
-const DISTANCE_4D = 2.5;
-const DISTANCE_3D = 3.2;
-/** Zoom relative to canvas size: the projected figure is only ~0.26 of this wide. */
-const ZOOM = 1.05;
-
-/** Theme colors come from CSS custom properties on the canvas so the host owns the palette. */
-interface Palette {
-  rapt: string;
-  feral: string;
-  point: string;
-  ink: string;
-  surface: string;
-}
-
-const FALLBACK: Palette = {
-  rapt: '#39ff14',
-  feral: '#b026ff',
-  point: '#f5f5dc',
-  ink: '#d6e4d6',
-  surface: '#0a120c',
-};
-
-function readPalette(el: Element): Palette {
-  const css = getComputedStyle(el);
-  const get = (name: string, fallback: string) => css.getPropertyValue(name).trim() || fallback;
-  return {
-    rapt: get('--rm-rapt', FALLBACK.rapt),
-    feral: get('--rm-feral', FALLBACK.feral),
-    point: get('--rm-point', FALLBACK.point),
-    ink: get('--rm-ink', FALLBACK.ink),
-    surface: get('--rm-surface', FALLBACK.surface),
-  };
-}
-
 function prefersReducedMotion(): boolean {
   return typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
 }
 
-export function TesseractCanvas({ value, onPickCorner, onTumble, className = '' }: TesseractCanvasProps) {
+export function TesseractCanvas({ value, vertices = VERTICES, counts, onPickCorner, onTumble, className = '' }: TesseractCanvasProps) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [spin, setSpin] = useState(() => !prefersReducedMotion());
@@ -78,6 +49,8 @@ export function TesseractCanvas({ value, onPickCorner, onTumble, className = '' 
   // Everything the render loop reads lives in refs so the loop never restarts.
   const rotation = useRef<Rotation4D>({ xy: 0.3, xz: 0.4, xw: 0.2, yz: 0.1, yw: 0.15, zw: 0.05 });
   const valueRef = useRef(value);
+  const verticesRef = useRef(vertices);
+  const countsRef = useRef(counts);
   const spinRef = useRef(spin);
   const planeRef = useRef(plane);
   const hover = useRef<number | null>(null);
@@ -88,6 +61,8 @@ export function TesseractCanvas({ value, onPickCorner, onTumble, className = '' 
   const screen = useRef<{ x: number; y: number }[]>([]);
 
   valueRef.current = value;
+  verticesRef.current = vertices;
+  countsRef.current = counts;
   spinRef.current = spin;
   planeRef.current = plane;
   onTumbleRef.current = onTumble;
@@ -95,7 +70,7 @@ export function TesseractCanvas({ value, onPickCorner, onTumble, className = '' 
 
   useEffect(() => {
     dirty.current = true;
-  }, [value, spin, plane]);
+  }, [value, vertices, counts, spin, plane]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -148,34 +123,17 @@ export function TesseractCanvas({ value, onPickCorner, onTumble, className = '' 
 
       const opts = { distance4D: DISTANCE_4D, distance3D: DISTANCE_3D, size, zoom: size * ZOOM };
       const rot = rotation.current;
-      const corners = VERTICES.map((v) => {
-        const r = rotate(v, rot);
-        return { w: r.w, p: project(r, opts) };
-      });
-      screen.current = corners.map((c) => c.p);
+      const figure = drawFigure(ctx, { size, rotation: rot, vertices: verticesRef.current, counts: countsRef.current, palette });
+      const corners = figure.screen.map((c) => ({ w: c.w, p: c }));
+      screen.current = figure.screen;
 
-      // Edges: tinted by where they sit along w, so the Rapt and Feral halves read as two bodies.
-      ctx.lineCap = 'round';
-      for (const [a, b] of EDGES) {
-        const A = corners[a];
-        const B = corners[b];
-        const grad = ctx.createLinearGradient(A.p.x, A.p.y, B.p.x, B.p.y);
-        grad.addColorStop(0, A.w >= 0 ? palette.rapt : palette.feral);
-        grad.addColorStop(1, B.w >= 0 ? palette.rapt : palette.feral);
-        ctx.strokeStyle = grad;
-        ctx.globalAlpha = 0.28 + 0.4 * ((A.w + B.w + 2) / 4);
-        ctx.lineWidth = 1.25;
-        ctx.beginPath();
-        ctx.moveTo(A.p.x, A.p.y);
-        ctx.lineTo(B.p.x, B.p.y);
-        ctx.stroke();
-      }
-      ctx.globalAlpha = 1;
-
-      const point = project(rotate(valueRef.current, rot), opts);
       // At the origin nothing is resolved yet, so there is no corner to tether to or label.
       const unmoved = readVector(valueRef.current).archetype.id === 'unmoved';
       const resolvedVertex = unmoved ? -1 : vertexIndexOf(valueRef.current);
+      // The point lives in the bent figure too: scaled like the corner it reads as.
+      const bend = resolvedVertex >= 0 ? Math.abs(verticesRef.current[resolvedVertex].x) : 1;
+      const v = valueRef.current;
+      const point = project(rotate({ x: v.x * bend, y: v.y * bend, z: v.z * bend, w: v.w * bend }, rot), opts);
 
       // Tether from the point to the corner it currently reads as.
       if (resolvedVertex >= 0) {
@@ -203,15 +161,19 @@ export function TesseractCanvas({ value, onPickCorner, onTumble, className = '' 
       ctx.globalAlpha = 1;
 
       // Labels only for the corner under the pointer and the corner the point resolves to.
-      ctx.font = '600 11px var(--font-jetbrains, ui-monospace, monospace)';
+      ctx.font = '600 11px ui-monospace, SFMono-Regular, Menlo, monospace';
       ctx.textBaseline = 'middle';
       const labelled = new Set<number>([resolvedVertex]);
       if (hover.current !== null) labelled.add(hover.current);
       labelled.forEach((i) => {
         if (i < 0) return;
-        const name = CORNER_AT_VERTEX[i].name;
+        const n = countsRef.current?.[i] ?? 0;
+        const corner = CORNER_AT_VERTEX[i];
+        const withFace = facesReady();
+        const name = `${withFace ? '' : `${corner.emoji} `}${corner.name}${n ? ` · ${n}` : ''}`;
+        const faceWidth = withFace ? 18 : 0;
         const c = corners[i].p;
-        const width = ctx.measureText(name).width;
+        const width = ctx.measureText(name).width + faceWidth;
         const left = Math.min(size - width - 10, Math.max(4, c.x + 9));
         const top = Math.min(size - 11, Math.max(11, c.y));
         ctx.fillStyle = palette.surface;
@@ -219,7 +181,8 @@ export function TesseractCanvas({ value, onPickCorner, onTumble, className = '' 
         ctx.fillRect(left - 4, top - 9, width + 8, 18);
         ctx.globalAlpha = 1;
         ctx.fillStyle = palette.ink;
-        ctx.fillText(name, left, top);
+        if (withFace) drawFace(ctx, corner.id, left + 7, top, 14);
+        ctx.fillText(name, left + faceWidth, top);
       });
 
       // The reaction point: a solid dot and a ring. Quiet on purpose.
@@ -339,7 +302,7 @@ export function TesseractCanvas({ value, onPickCorner, onTumble, className = '' 
           tabIndex={0}
           role="application"
           aria-roledescription="rotatable hypercube"
-          aria-label="Hypercube of reactions. Arrow keys rotate it; the sliders set your reaction."
+          aria-label="Hypercube of reactions, bent toward what people picked. Arrow keys rotate it; click a corner to pick it."
           onPointerDown={onPointerDown}
           onPointerMove={onPointerMove}
           onPointerUp={onPointerUp}
